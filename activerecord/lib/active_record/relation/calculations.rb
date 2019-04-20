@@ -179,7 +179,9 @@ module ActiveRecord
     # See also #ids.
     #
     def pluck(*column_names)
-      if loaded? && (column_names.map(&:to_s) - @klass.attribute_names - @klass.attribute_aliases.keys).empty?
+      column_names = column_names.map(&:to_s)
+
+      if loaded? && (column_names - @klass.attribute_names - @klass.attribute_aliases.keys).empty?
         return records.pluck(*column_names)
       end
 
@@ -191,7 +193,7 @@ module ActiveRecord
         relation = spawn
         relation.select_values = column_names
         result = skip_query_cache_if_necessary { klass.connection.select_all(relation.arel, nil) }
-        result.cast_values(klass.attribute_types)
+        result.cast_values(klass.attribute_types, columns: column_names)
       end
     end
 

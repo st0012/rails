@@ -106,7 +106,7 @@ module ActiveRecord
       Hash[@columns.zip(@rows.last)]
     end
 
-    def cast_values(type_overrides = {}) # :nodoc:
+    def cast_values(type_overrides = {}, columns: self.columns) # :nodoc:
       if columns.one?
         # Separated to avoid allocating an array per row
 
