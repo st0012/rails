@@ -9,6 +9,8 @@ class Book < ActiveRecord::Base
   has_many :subscriptions
   has_many :subscribers, through: :subscriptions
 
+  has_many :book_reviews
+
   enum status: [:proposed, :written, :published]
   enum read_status: { unread: 0, reading: 2, read: 3, forgotten: nil }
   enum nullable_status: [:single, :married]

@@ -2,6 +2,7 @@
 
 require "cases/helper"
 require "models/book"
+require "models/book_review"
 require "models/club"
 require "models/company"
 require "models/contract"
@@ -708,6 +709,17 @@ class CalculationsTest < ActiveRecord::TestCase
 
   def test_pluck_and_distinct
     assert_equal [50, 53, 55, 60], Account.order(:credit_limit).distinct.pluck(:credit_limit)
+  end
+
+  def test_pluck_from_joined_table
+    b = Book.create!(name: "Foo", status: :written)
+    BookReview.create!(book: b, status: :approved)
+
+    result = assert_queries 1 do
+       Book.joins(:book_reviews).pluck(:status, "book_reviews.status")
+    end
+
+    assert_equal(result, [["written", 0]])
   end
 
   def test_pluck_in_relation
