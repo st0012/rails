@@ -9,14 +9,18 @@ STATS_DIRECTORIES = [
   %w(Jobs               app/jobs),
   %w(Models             app/models),
   %w(Mailers            app/mailers),
+  %w(Mailboxes          app/mailboxes),
   %w(Channels           app/channels),
   %w(JavaScripts        app/assets/javascripts),
+  %w(JavaScript         app/javascript),
   %w(Libraries          lib/),
   %w(APIs               app/apis),
   %w(Controller\ tests  test/controllers),
   %w(Helper\ tests      test/helpers),
   %w(Model\ tests       test/models),
   %w(Mailer\ tests      test/mailers),
+  %w(Mailbox\ tests     test/mailboxes),
+  %w(Channel\ tests     test/channels),
   %w(Job\ tests         test/jobs),
   %w(Integration\ tests test/integration),
   %w(System\ tests      test/system),
@@ -26,6 +30,6 @@ end.select { |name, dir| File.directory?(dir) }
 
 desc "Report code statistics (KLOCs, etc) from the application or engine"
 task :stats do
-  require_relative "../code_statistics"
+  require "rails/code_statistics"
   CodeStatistics.new(*STATS_DIRECTORIES).to_s
 end

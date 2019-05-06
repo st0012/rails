@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require_relative "../http/request"
-require_relative "exception_wrapper"
+require "action_dispatch/http/request"
+require "action_dispatch/middleware/exception_wrapper"
 
 module ActionDispatch
   # This middleware rescues any exception returned by the application
@@ -45,7 +45,7 @@ module ActionDispatch
         backtrace_cleaner = request.get_header "action_dispatch.backtrace_cleaner"
         wrapper = ExceptionWrapper.new(backtrace_cleaner, exception)
         status  = wrapper.status_code
-        request.set_header "action_dispatch.exception", wrapper.exception
+        request.set_header "action_dispatch.exception", wrapper.unwrapped_exception
         request.set_header "action_dispatch.original_path", request.path_info
         request.path_info = "/#{status}"
         response = @exceptions_app.call(request.env)

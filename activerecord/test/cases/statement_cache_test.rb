@@ -4,6 +4,7 @@ require "cases/helper"
 require "models/book"
 require "models/liquid"
 require "models/molecule"
+require "models/numeric_data"
 require "models/electron"
 
 module ActiveRecord
@@ -12,7 +13,6 @@ module ActiveRecord
       @connection = ActiveRecord::Base.connection
     end
 
-    #Cache v 1.1 tests
     def test_statement_cache
       Book.create(name: "my book")
       Book.create(name: "my other book")
@@ -51,8 +51,6 @@ module ActiveRecord
       assert_equal("my other book", b.name)
     end
 
-    #End
-
     def test_statement_cache_with_simple_statement
       cache = ActiveRecord::StatementCache.create(Book.connection) do |params|
         Book.where(name: "my book").where("author_id > 3")
@@ -75,6 +73,11 @@ module ActiveRecord
 
       liquids = cache.execute([], Book.connection)
       assert_equal "salty", liquids[0].name
+    end
+
+    def test_statement_cache_with_strictly_cast_attribute
+      row = NumericData.create(temperature: 1.5)
+      assert_equal row, NumericData.find_by(temperature: 1.5)
     end
 
     def test_statement_cache_values_differ
@@ -105,7 +108,7 @@ module ActiveRecord
         Book.find_by(name: "my other book")
       end
 
-      refute_equal book, other_book
+      assert_not_equal book, other_book
     end
 
     def test_find_by_does_not_use_statement_cache_if_table_name_is_changed

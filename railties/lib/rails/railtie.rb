@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "initializable"
+require "rails/initializable"
 require "active_support/inflector"
 require "active_support/core_ext/module/introspection"
 require "active_support/core_ext/module/delegation"
@@ -224,7 +224,7 @@ module Rails
     end
 
     def railtie_namespace #:nodoc:
-      @railtie_namespace ||= self.class.parents.detect { |n| n.respond_to?(:railtie_namespace) }
+      @railtie_namespace ||= self.class.module_parents.detect { |n| n.respond_to?(:railtie_namespace) }
     end
 
     protected

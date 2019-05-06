@@ -3,15 +3,18 @@
 # Serves files stored with the disk service in the same way that the cloud services do.
 # This means using expiring, signed URLs that are meant for immediate access, not permanent linking.
 # Always go through the BlobsController, or your own authenticated controller, rather than directly
-# to the service url.
-class ActiveStorage::DiskController < ActionController::Base
+# to the service URL.
+class ActiveStorage::DiskController < ActiveStorage::BaseController
+  skip_forgery_protection
+
   def show
     if key = decode_verified_key
-      send_data disk_service.download(key),
-        disposition: disposition_param, content_type: params[:content_type]
+      serve_file disk_service.path_for(key[:key]), content_type: key[:content_type], disposition: key[:disposition]
     else
       head :not_found
     end
+  rescue Errno::ENOENT
+    head :not_found
   end
 
   def update
@@ -38,8 +41,18 @@ class ActiveStorage::DiskController < ActionController::Base
       ActiveStorage.verifier.verified(params[:encoded_key], purpose: :blob_key)
     end
 
-    def disposition_param
-      params[:disposition].presence || "inline"
+    def serve_file(path, content_type:, disposition:)
+      Rack::File.new(nil).serving(request, path).tap do |(status, headers, body)|
+        self.status = status
+        self.response_body = body
+
+        headers.each do |name, value|
+          response.headers[name] = value
+        end
+
+        response.headers["Content-Type"] = content_type || DEFAULT_SEND_FILE_TYPE
+        response.headers["Content-Disposition"] = disposition || DEFAULT_SEND_FILE_DISPOSITION
+      end
     end
 
 
@@ -48,6 +61,6 @@ class ActiveStorage::DiskController < ActionController::Base
     end
 
     def acceptable_content?(token)
-      token[:content_type] == request.content_type && token[:content_length] == request.content_length
+      token[:content_type] == request.content_mime_type && token[:content_length] == request.content_length
     end
 end

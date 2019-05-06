@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "active_support/core_ext/module/remove_method"
+require "active_support/core_ext/module/redefine_method"
 require "action_controller"
 require "action_controller/test_case"
 require "action_view"
@@ -107,7 +107,7 @@ module ActionView
         # empty string ensures buffer has UTF-8 encoding as
         # new without arguments returns ASCII-8BIT encoded buffer like String#new
         @output_buffer = ActiveSupport::SafeBuffer.new ""
-        @rendered = "".dup
+        @rendered = +""
 
         make_test_case_available_to_view!
         say_no_to_protect_against_forgery!
@@ -171,7 +171,7 @@ module ActionView
 
       def say_no_to_protect_against_forgery!
         _helpers.module_eval do
-          remove_possible_method :protect_against_forgery?
+          silence_redefinition_of_method :protect_against_forgery?
           def protect_against_forgery?
             false
           end
@@ -270,7 +270,7 @@ module ActionView
         begin
           routes = @controller.respond_to?(:_routes) && @controller._routes
         rescue
-          # Dont call routes, if there is an error on _routes call
+          # Don't call routes, if there is an error on _routes call
         end
 
         if routes &&
@@ -284,9 +284,9 @@ module ActionView
 
       def respond_to_missing?(name, include_private = false)
         begin
-          routes = @controller.respond_to?(:_routes) && @controller._routes
+          routes = defined?(@controller) && @controller.respond_to?(:_routes) && @controller._routes
         rescue
-          # Dont call routes, if there is an error on _routes call
+          # Don't call routes, if there is an error on _routes call
         end
 
         routes &&

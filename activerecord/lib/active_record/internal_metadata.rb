@@ -1,23 +1,27 @@
 # frozen_string_literal: true
 
-require_relative "scoping/default"
-require_relative "scoping/named"
+require "active_record/scoping/default"
+require "active_record/scoping/named"
 
 module ActiveRecord
   # This class is used to create a table that keeps track of values and keys such
   # as which environment migrations were run in.
   class InternalMetadata < ActiveRecord::Base # :nodoc:
     class << self
+      def _internal?
+        true
+      end
+
       def primary_key
         "key"
       end
 
       def table_name
-        "#{table_name_prefix}#{ActiveRecord::Base.internal_metadata_table_name}#{table_name_suffix}"
+        "#{table_name_prefix}#{internal_metadata_table_name}#{table_name_suffix}"
       end
 
       def []=(key, value)
-        find_or_initialize_by(key: key).update_attributes!(value: value)
+        find_or_initialize_by(key: key).update!(value: value)
       end
 
       def [](key)
@@ -39,6 +43,10 @@ module ActiveRecord
             t.timestamps
           end
         end
+      end
+
+      def drop_table
+        connection.drop_table table_name, if_exists: true
       end
     end
   end

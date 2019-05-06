@@ -15,41 +15,56 @@ module ActiveStorage
       @root = root
     end
 
-    def upload(key, io, checksum: nil)
-      instrument :upload, key, checksum: checksum do
+    def upload(key, io, checksum: nil, **)
+      instrument :upload, key: key, checksum: checksum do
         IO.copy_stream(io, make_path_for(key))
         ensure_integrity_of(key, checksum) if checksum
       end
     end
 
-    def download(key)
+    def download(key, &block)
       if block_given?
-        instrument :streaming_download, key do
-          File.open(path_for(key), "rb") do |file|
-            while data = file.read(64.kilobytes)
-              yield data
-            end
-          end
+        instrument :streaming_download, key: key do
+          stream key, &block
         end
       else
-        instrument :download, key do
+        instrument :download, key: key do
           File.binread path_for(key)
+        rescue Errno::ENOENT
+          raise ActiveStorage::FileNotFoundError
         end
       end
     end
 
+    def download_chunk(key, range)
+      instrument :download_chunk, key: key, range: range do
+        File.open(path_for(key), "rb") do |file|
+          file.seek range.begin
+          file.read range.size
+        end
+      rescue Errno::ENOENT
+        raise ActiveStorage::FileNotFoundError
+      end
+    end
+
     def delete(key)
-      instrument :delete, key do
-        begin
-          File.delete path_for(key)
-        rescue Errno::ENOENT
-          # Ignore files already deleted
+      instrument :delete, key: key do
+        File.delete path_for(key)
+      rescue Errno::ENOENT
+        # Ignore files already deleted
+      end
+    end
+
+    def delete_prefixed(prefix)
+      instrument :delete_prefixed, prefix: prefix do
+        Dir.glob(path_for("#{prefix}*")).each do |path|
+          FileUtils.rm_rf(path)
         end
       end
     end
 
     def exist?(key)
-      instrument :exist, key do |payload|
+      instrument :exist, key: key do |payload|
         answer = File.exist? path_for(key)
         payload[:exist] = answer
         answer
@@ -57,18 +72,24 @@ module ActiveStorage
     end
 
     def url(key, expires_in:, filename:, disposition:, content_type:)
-      instrument :url, key do |payload|
-        verified_key_with_expiration = ActiveStorage.verifier.generate(key, expires_in: expires_in, purpose: :blob_key)
+      instrument :url, key: key do |payload|
+        content_disposition = content_disposition_with(type: disposition, filename: filename)
+        verified_key_with_expiration = ActiveStorage.verifier.generate(
+          {
+            key: key,
+            disposition: content_disposition,
+            content_type: content_type
+          },
+          { expires_in: expires_in,
+          purpose: :blob_key }
+        )
 
-        generated_url =
-          if defined?(Rails.application)
-            Rails.application.routes.url_helpers.rails_disk_service_path \
-              verified_key_with_expiration,
-              filename: filename, disposition: disposition, content_type: content_type
-          else
-            "/rails/active_storage/disk/#{verified_key_with_expiration}/#{filename}?disposition=#{disposition}&content_type=#{content_type}"
-          end
-
+        generated_url = url_helpers.rails_disk_service_url(verified_key_with_expiration,
+          host: current_host,
+          disposition: content_disposition,
+          content_type: content_type,
+          filename: filename
+        )
         payload[:url] = generated_url
 
         generated_url
@@ -76,7 +97,7 @@ module ActiveStorage
     end
 
     def url_for_direct_upload(key, expires_in:, content_type:, content_length:, checksum:)
-      instrument :url, key do |payload|
+      instrument :url, key: key do |payload|
         verified_token_with_expiration = ActiveStorage.verifier.generate(
           {
             key: key,
@@ -88,12 +109,7 @@ module ActiveStorage
           purpose: :blob_token }
         )
 
-        generated_url =
-          if defined?(Rails.application)
-            Rails.application.routes.url_helpers.update_rails_disk_service_path verified_token_with_expiration
-          else
-            "/rails/active_storage/disk/#{verified_token_with_expiration}"
-          end
+        generated_url = url_helpers.update_rails_disk_service_url(verified_token_with_expiration, host: current_host)
 
         payload[:url] = generated_url
 
@@ -105,9 +121,19 @@ module ActiveStorage
       { "Content-Type" => content_type }
     end
 
+    def path_for(key) #:nodoc:
+      File.join root, folder_for(key), key
+    end
+
     private
-      def path_for(key)
-        File.join root, folder_for(key), key
+      def stream(key)
+        File.open(path_for(key), "rb") do |file|
+          while data = file.read(5.megabytes)
+            yield data
+          end
+        end
+      rescue Errno::ENOENT
+        raise ActiveStorage::FileNotFoundError
       end
 
       def folder_for(key)
@@ -123,6 +149,14 @@ module ActiveStorage
           delete key
           raise ActiveStorage::IntegrityError
         end
+      end
+
+      def url_helpers
+        @url_helpers ||= Rails.application.routes.url_helpers
+      end
+
+      def current_host
+        ActiveStorage::Current.host
       end
   end
 end

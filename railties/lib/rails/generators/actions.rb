@@ -1,41 +1,45 @@
 # frozen_string_literal: true
 
+require "active_support/core_ext/string/strip"
+
 module Rails
   module Generators
     module Actions
       def initialize(*) # :nodoc:
         super
-        @in_group = nil
-        @after_bundle_callbacks = []
+        @indentation = 0
       end
 
       # Adds an entry into +Gemfile+ for the supplied gem.
       #
       #   gem "rspec", group: :test
       #   gem "technoweenie-restful-authentication", lib: "restful-authentication", source: "http://gems.github.com/"
-      #   gem "rails", "3.0", git: "git://github.com/rails/rails"
+      #   gem "rails", "3.0", git: "https://github.com/rails/rails"
+      #   gem "RedCloth", ">= 4.1.0", "< 4.2.0"
       def gem(*args)
         options = args.extract_options!
-        name, version = args
+        name, *versions = args
 
         # Set the message to be shown in logs. Uses the git repo if one is given,
         # otherwise use name (version).
         parts, message = [ quote(name) ], name.dup
-        if version ||= options.delete(:version)
-          parts   << quote(version)
-          message << " (#{version})"
+
+        if versions = versions.any? ? versions : options.delete(:version)
+          _versions = Array(versions)
+          _versions.each do |version|
+            parts << quote(version)
+          end
+          message << " (#{_versions.join(", ")})"
         end
         message = options[:git] if options[:git]
 
         log :gemfile, message
 
-        options.each do |option, value|
-          parts << "#{option}: #{quote(value)}"
-        end
+        parts << quote(options) unless options.empty?
 
         in_root do
           str = "gem #{parts.join(", ")}"
-          str = "  " + str if @in_group
+          str = indentation + str
           str = "\n" + str
           append_file "Gemfile", str, verbose: false
         end
@@ -47,17 +51,29 @@ module Rails
       #     gem "rspec-rails"
       #   end
       def gem_group(*names, &block)
-        name = names.map(&:inspect).join(", ")
-        log :gemfile, "group #{name}"
+        options = names.extract_options!
+        str = names.map(&:inspect)
+        str << quote(options) unless options.empty?
+        str = str.join(", ")
+        log :gemfile, "group #{str}"
 
         in_root do
-          append_file "Gemfile", "\ngroup #{name} do", force: true
-
-          @in_group = true
-          instance_eval(&block)
-          @in_group = false
-
+          append_file "Gemfile", "\ngroup #{str} do", force: true
+          with_indentation(&block)
           append_file "Gemfile", "\nend\n", force: true
+        end
+      end
+
+      def github(repo, options = {}, &block)
+        str = [quote(repo)]
+        str << quote(options) unless options.empty?
+        str = str.join(", ")
+        log :github, "github #{str}"
+
+        in_root do
+          append_file "Gemfile", "\n#{indentation}github #{str} do", force: true
+          with_indentation(&block)
+          append_file "Gemfile", "\n#{indentation}end", force: true
         end
       end
 
@@ -76,9 +92,7 @@ module Rails
         in_root do
           if block
             append_file "Gemfile", "\nsource #{quote(source)} do", force: true
-            @in_group = true
-            instance_eval(&block)
-            @in_group = false
+            with_indentation(&block)
             append_file "Gemfile", "\nend\n", force: true
           else
             prepend_file "Gemfile", "source #{quote(source)}\n", verbose: false
@@ -206,9 +220,12 @@ module Rails
       #   generate(:authenticated, "user session")
       def generate(what, *args)
         log :generate, what
+
+        options = args.extract_options!
+        options[:without_rails_env] = true
         argument = args.flat_map(&:to_s).join(" ")
 
-        in_root { run_ruby_script("bin/rails generate #{what} #{argument}", verbose: false) }
+        execute_command :rails, "generate #{what} #{argument}", options
       end
 
       # Runs the supplied rake task (invoked with 'rake ...')
@@ -216,6 +233,7 @@ module Rails
       #   rake("db:migrate")
       #   rake("db:migrate", env: "production")
       #   rake("gems:install", sudo: true)
+      #   rake("gems:install", capture: true)
       def rake(command, options = {})
         execute_command :rake, command, options
       end
@@ -225,17 +243,9 @@ module Rails
       #   rails_command("db:migrate")
       #   rails_command("db:migrate", env: "production")
       #   rails_command("gems:install", sudo: true)
+      #   rails_command("gems:install", capture: true)
       def rails_command(command, options = {})
         execute_command :rails, command, options
-      end
-
-      # Just run the capify command in root
-      #
-      #   capify!
-      def capify!
-        ActiveSupport::Deprecation.warn("`capify!` is deprecated and will be removed in the next version of Rails.")
-        log :capify, ""
-        in_root { run("#{extify(:capify)} .", verbose: false) }
       end
 
       # Make an entry in Rails routing file <tt>config/routes.rb</tt>
@@ -257,16 +267,6 @@ module Rails
         log File.read(find_in_source_paths(path))
       end
 
-      # Registers a callback to be executed after bundle and spring binstubs
-      # have run.
-      #
-      #   after_bundle do
-      #     git add: '.'
-      #   end
-      def after_bundle(&block)
-        @after_bundle_callbacks << block
-      end
-
       private
 
         # Define log for backwards compatibility. If just one argument is sent,
@@ -285,9 +285,15 @@ module Rails
         # based on the executor parameter provided.
         def execute_command(executor, command, options = {}) # :doc:
           log executor, command
-          env  = options[:env] || ENV["RAILS_ENV"] || "development"
+          env = options[:env] || ENV["RAILS_ENV"] || "development"
+          rails_env = " RAILS_ENV=#{env}" unless options[:without_rails_env]
           sudo = options[:sudo] && !Gem.win_platform? ? "sudo " : ""
-          in_root { run("#{sudo}#{extify(executor)} #{command} RAILS_ENV=#{env}", verbose: false) }
+          config = { verbose: false }
+
+          config[:capture] = options[:capture] if options[:capture]
+          config[:abort_on_failure] = options[:abort_on_failure] if options[:abort_on_failure]
+
+          in_root { run("#{sudo}#{extify(executor)} #{command}#{rails_env}", config) }
         end
 
         # Add an extension to the given name based on the platform.
@@ -302,6 +308,11 @@ module Rails
         # Surround string with single quotes if there is no quotes.
         # Otherwise fall back to double quotes
         def quote(value) # :doc:
+          if value.respond_to? :each_pair
+            return value.map do |k, v|
+              "#{k}: #{quote(v)}"
+            end.join(", ")
+          end
           return value.inspect unless value.is_a? String
 
           if value.include?("'")
@@ -320,6 +331,19 @@ module Rails
           else
             "#{value.strip.indent(amount)}\n"
           end
+        end
+
+        # Indent the +Gemfile+ to the depth of @indentation
+        def indentation # :doc:
+          "  " * @indentation
+        end
+
+        # Manage +Gemfile+ indentation for a DSL action block
+        def with_indentation(&block) # :doc:
+          @indentation += 1
+          instance_eval(&block)
+        ensure
+          @indentation -= 1
         end
     end
   end

@@ -34,6 +34,22 @@ class LoadingTest < ActiveSupport::TestCase
     assert_equal "omg", p.title
   end
 
+  test "constants without a matching file raise NameError" do
+    app_file "app/models/post.rb", <<-RUBY
+      class Post
+        NON_EXISTING_CONSTANT
+      end
+    RUBY
+
+    boot_app
+
+    e = assert_raise(NameError) { User }
+    assert_equal "uninitialized constant #{self.class}::User", e.message
+
+    e = assert_raise(NameError) { Post }
+    assert_equal "uninitialized constant Post::NON_EXISTING_CONSTANT", e.message
+  end
+
   test "concerns in app are autoloaded" do
     app_file "app/controllers/concerns/trackable.rb", <<-CONCERN
       module Trackable
@@ -300,7 +316,7 @@ class LoadingTest < ActiveSupport::TestCase
       end
     MIGRATION
 
-    Dir.chdir(app_path) { `rake db:migrate` }
+    rails("db:migrate")
     require "#{rails_root}/config/environment"
 
     get "/title"
@@ -314,7 +330,7 @@ class LoadingTest < ActiveSupport::TestCase
       end
     MIGRATION
 
-    Dir.chdir(app_path) { `rake db:migrate` }
+    rails("db:migrate")
 
     get "/body"
     assert_equal "BODY", last_response.body
@@ -352,11 +368,89 @@ class LoadingTest < ActiveSupport::TestCase
   def test_initialize_can_be_called_at_any_time
     require "#{app_path}/config/application"
 
-    assert !Rails.initialized?
-    assert !Rails.application.initialized?
+    assert_not_predicate Rails, :initialized?
+    assert_not_predicate Rails.application, :initialized?
     Rails.initialize!
-    assert Rails.initialized?
-    assert Rails.application.initialized?
+    assert_predicate Rails, :initialized?
+    assert_predicate Rails.application, :initialized?
+  end
+
+  test "frameworks aren't loaded during initialization" do
+    app_file "config/initializers/raise_when_frameworks_load.rb", <<-RUBY
+      %i(action_controller action_mailer active_job active_record).each do |framework|
+        ActiveSupport.on_load(framework) { raise "\#{framework} loaded!" }
+      end
+    RUBY
+
+    assert_nothing_raised do
+      require "#{app_path}/config/environment"
+    end
+  end
+
+  test "active record query cache hooks are installed before first request in production" do
+    app_file "app/controllers/omg_controller.rb", <<-RUBY
+      begin
+        class OmgController < ActionController::Metal
+          ActiveSupport.run_load_hooks(:action_controller, self)
+          def show
+            if ActiveRecord::Base.connection.query_cache_enabled
+              self.response_body = ["Query cache is enabled."]
+            else
+              self.response_body = ["Expected ActiveRecord::Base.connection.query_cache_enabled to be true"]
+            end
+          end
+        end
+      rescue => e
+        puts "Error loading metal: \#{e.class} \#{e.message}"
+      end
+    RUBY
+
+    app_file "config/routes.rb", <<-RUBY
+      Rails.application.routes.draw do
+        get "/:controller(/:action)"
+      end
+    RUBY
+
+    boot_app "production"
+
+    require "rack/test"
+    extend Rack::Test::Methods
+
+    get "/omg/show"
+    assert_equal "Query cache is enabled.", last_response.body
+  end
+
+  test "active record query cache hooks are installed before first request in development" do
+    app_file "app/controllers/omg_controller.rb", <<-RUBY
+      begin
+        class OmgController < ActionController::Metal
+          ActiveSupport.run_load_hooks(:action_controller, self)
+          def show
+            if ActiveRecord::Base.connection.query_cache_enabled
+              self.response_body = ["Query cache is enabled."]
+            else
+              self.response_body = ["Expected ActiveRecord::Base.connection.query_cache_enabled to be true"]
+            end
+          end
+        end
+      rescue => e
+        puts "Error loading metal: \#{e.class} \#{e.message}"
+      end
+    RUBY
+
+    app_file "config/routes.rb", <<-RUBY
+      Rails.application.routes.draw do
+        get "/:controller(/:action)"
+      end
+    RUBY
+
+    boot_app "development"
+
+    require "rack/test"
+    extend Rack::Test::Methods
+
+    get "/omg/show"
+    assert_equal "Query cache is enabled.", last_response.body
   end
 
   private
@@ -369,5 +463,13 @@ class LoadingTest < ActiveSupport::TestCase
           t.string :title
         end
       end
+    end
+
+    def boot_app(env = "development")
+      ENV["RAILS_ENV"] = env
+
+      require "#{app_path}/config/environment"
+    ensure
+      ENV.delete "RAILS_ENV"
     end
 end

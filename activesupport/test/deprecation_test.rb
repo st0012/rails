@@ -31,6 +31,9 @@ class Deprecatee
   def f=(v); end
   deprecate :f=
 
+  deprecate :g
+  def g; end
+
   module B
     C = 1
   end
@@ -158,7 +161,7 @@ class DeprecationTest < ActiveSupport::TestCase
     stderr_output = capture(:stderr) {
       assert_nil behavior.call("Some error!", ["call stack!"], "horizon", "gem")
     }
-    assert stderr_output.empty?
+    assert_empty stderr_output
   end
 
   def test_default_notify_behavior
@@ -180,6 +183,14 @@ class DeprecationTest < ActiveSupport::TestCase
     ensure
       ActiveSupport::Notifications.unsubscribe("deprecation.my_gem_custom")
     end
+  end
+
+  def test_default_invalid_behavior
+    e = assert_raises(ArgumentError) do
+      ActiveSupport::Deprecation.behavior = :invalid
+    end
+
+    assert_equal ":invalid is not a valid deprecation behavior.", e.message
   end
 
   def test_deprecated_instance_variable_proxy
@@ -415,6 +426,10 @@ class DeprecationTest < ActiveSupport::TestCase
     deprecator.send(:deprecated_method_warning, :deprecated_method, "You are calling deprecated method").tap do |message|
       assert_match(/is deprecated and will be removed from Custom/, message)
     end
+  end
+
+  def test_deprecate_work_before_define_method
+    assert_deprecated { @dtc.g }
   end
 
   private

@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-require_relative "../../duration"
-require_relative "conversions"
-require_relative "../../time_with_zone"
-require_relative "zones"
-require_relative "../date_and_time/calculations"
-require_relative "../date/calculations"
+require "active_support/duration"
+require "active_support/core_ext/time/conversions"
+require "active_support/time_with_zone"
+require "active_support/core_ext/time/zones"
+require "active_support/core_ext/date_and_time/calculations"
+require "active_support/core_ext/date/calculations"
 
 class Time
   include DateAndTime::Calculations
@@ -170,8 +170,7 @@ class Time
       options[:hours] = options.fetch(:hours, 0) + 24 * partial_days
     end
 
-    d = to_date.advance(options)
-    d = d.gregorian if d.julian?
+    d = to_date.gregorian.advance(options)
     time_advanced_by_date = change(year: d.year, month: d.month, day: d.day)
     seconds_to_advance = \
       options.fetch(:seconds, 0) +

@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
-# Provides delayed purging of attachments or blobs using their +purge_later+ method.
-class ActiveStorage::PurgeJob < ActiveJob::Base
-  # FIXME: Limit this to a custom ActiveStorage error
-  retry_on StandardError
+# Provides asynchronous purging of ActiveStorage::Blob records via ActiveStorage::Blob#purge_later.
+class ActiveStorage::PurgeJob < ActiveStorage::BaseJob
+  queue_as { ActiveStorage.queues[:purge] }
 
-  def perform(attachment_or_blob)
-    attachment_or_blob.purge
+  discard_on ActiveRecord::RecordNotFound
+  retry_on ActiveRecord::Deadlocked, attempts: 10, wait: :exponentially_longer
+
+  def perform(blob)
+    blob.purge
   end
 end

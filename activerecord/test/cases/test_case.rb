@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "active_support/test_case"
+require "active_support"
 require "active_support/testing/autorun"
 require "active_support/testing/method_call_assertions"
 require "active_support/testing/stream"
@@ -31,6 +31,7 @@ module ActiveRecord
     end
 
     def capture_sql
+      ActiveRecord::Base.connection.materialize_transactions
       SQLCounter.clear_log
       yield
       SQLCounter.log_all.dup
@@ -48,6 +49,7 @@ module ActiveRecord
 
     def assert_queries(num = 1, options = {})
       ignore_none = options.fetch(:ignore_none) { num == :any }
+      ActiveRecord::Base.connection.materialize_transactions
       SQLCounter.clear_log
       x = yield
       the_log = ignore_none ? SQLCounter.log_all : SQLCounter.log
@@ -105,19 +107,7 @@ module ActiveRecord
 
     clear_log
 
-    self.ignored_sql = [/^PRAGMA/, /^SELECT currval/, /^SELECT CAST/, /^SELECT @@IDENTITY/, /^SELECT @@ROWCOUNT/, /^SAVEPOINT/, /^ROLLBACK TO SAVEPOINT/, /^RELEASE SAVEPOINT/, /^SHOW max_identifier_length/, /^BEGIN/, /^COMMIT/]
-
-    # FIXME: this needs to be refactored so specific database can add their own
-    # ignored SQL, or better yet, use a different notification for the queries
-    # instead examining the SQL content.
-    oracle_ignored     = [/^select .*nextval/i, /^SAVEPOINT/, /^ROLLBACK TO/, /^\s*select .* from all_triggers/im, /^\s*select .* from all_constraints/im, /^\s*select .* from all_tab_cols/im]
-    mysql_ignored      = [/^SHOW FULL TABLES/i, /^SHOW FULL FIELDS/, /^SHOW CREATE TABLE /i, /^SHOW VARIABLES /, /^\s*SELECT (?:column_name|table_name)\b.*\bFROM information_schema\.(?:key_column_usage|tables)\b/im]
-    postgresql_ignored = [/^\s*select\b.*\bfrom\b.*pg_namespace\b/im, /^\s*select tablename\b.*from pg_tables\b/im, /^\s*select\b.*\battname\b.*\bfrom\b.*\bpg_attribute\b/im, /^SHOW search_path/i]
-    sqlite3_ignored =    [/^\s*SELECT name\b.*\bFROM sqlite_master/im, /^\s*SELECT sql\b.*\bFROM sqlite_master/im]
-
-    [oracle_ignored, mysql_ignored, postgresql_ignored, sqlite3_ignored].each do |db_ignored_sql|
-      ignored_sql.concat db_ignored_sql
-    end
+    self.ignored_sql = [/^SAVEPOINT/, /^ROLLBACK TO SAVEPOINT/, /^RELEASE SAVEPOINT/]
 
     attr_reader :ignore
 
@@ -130,7 +120,7 @@ module ActiveRecord
 
       sql = values[:sql]
       self.class.log_all << sql
-      self.class.log << sql unless ignore.match?(sql)
+      self.class.log << sql unless values[:name] == "SCHEMA" || ignore.match?(sql)
     end
   end
 

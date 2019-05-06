@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require_relative "application_controller"
+require "rails/application_controller"
 require "action_dispatch/routing/inspector"
 
 class Rails::InfoController < Rails::ApplicationController # :nodoc:
-  prepend_view_path ActionDispatch::DebugExceptions::RESCUES_TEMPLATE_PATH
+  prepend_view_path ActionDispatch::DebugView::RESCUES_TEMPLATE_PATH
   layout -> { request.xhr? ? false : "application" }
 
   before_action :require_local!

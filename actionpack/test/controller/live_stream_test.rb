@@ -304,7 +304,7 @@ module ActionController
       # Simulate InterlockHook
       ActiveSupport::Dependencies.interlock.start_running
       res = get :write_sleep_autoload
-      res.each {}
+      res.each { }
       ActiveSupport::Dependencies.interlock.done_running
     end
 
@@ -464,7 +464,7 @@ module ActionController
     end
 
     def test_stale_with_etag
-      @request.if_none_match = %(W/"#{Digest::MD5.hexdigest('123')}")
+      @request.if_none_match = %(W/"#{ActiveSupport::Digest.hexdigest('123')}")
       get :with_stale
       assert_equal 304, response.status.to_i
     end

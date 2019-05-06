@@ -26,10 +26,10 @@ module ActionController
       end
     end
 
-    def build(action, app = Proc.new)
+    def build(action, app = nil, &block)
       action = action.to_s
 
-      middlewares.reverse.inject(app) do |a, middleware|
+      middlewares.reverse.inject(app || block) do |a, middleware|
         middleware.valid?(action) ? middleware.build(a) : a
       end
     end
@@ -230,18 +230,16 @@ module ActionController
 
     # Returns a Rack endpoint for the given action name.
     def self.action(name)
+      app = lambda { |env|
+        req = ActionDispatch::Request.new(env)
+        res = make_response! req
+        new.dispatch(name, req, res)
+      }
+
       if middleware_stack.any?
-        middleware_stack.build(name) do |env|
-          req = ActionDispatch::Request.new(env)
-          res = make_response! req
-          new.dispatch(name, req, res)
-        end
+        middleware_stack.build(name, app)
       else
-        lambda { |env|
-          req = ActionDispatch::Request.new(env)
-          res = make_response! req
-          new.dispatch(name, req, res)
-        }
+        app
       end
     end
 

@@ -60,7 +60,7 @@ module ApplicationTests
       assert_equal "YOU FAILED", last_response.body
     end
 
-    test "url generation error when action_dispatch.show_exceptions is set raises an exception" do
+    test "URL generation error when action_dispatch.show_exceptions is set raises an exception" do
       controller :foo, <<-RUBY
         class FooController < ActionController::Base
           def index
@@ -102,7 +102,7 @@ module ApplicationTests
       end
     end
 
-    test "routing to an nonexistent controller when action_dispatch.show_exceptions and consider_all_requests_local are set shows diagnostics" do
+    test "routing to a nonexistent controller when action_dispatch.show_exceptions and consider_all_requests_local are set shows diagnostics" do
       app_file "config/routes.rb", <<-RUBY
         Rails.application.routes.draw do
           resources :articles

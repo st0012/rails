@@ -6,7 +6,7 @@ require "active_support/core_ext/hash/reverse_merge"
 require "active_support/core_ext/kernel/reporting"
 require "active_support/testing/stream"
 require "active_support/concern"
-require_relative "../../generators"
+require "rails/generators"
 
 module Rails
   module Generators
@@ -67,6 +67,9 @@ module Rails
         def run_generator(args = default_arguments, config = {})
           capture(:stdout) do
             args += ["--skip-bundle"] unless args.include? "--dev"
+            args |= ["--skip-bootsnap"] unless args.include? "--no-skip-bootsnap"
+            args |= ["--skip-webpack-install"] unless args.include? "--no-skip-webpack-install"
+
             generator_class.start(args, config.reverse_merge(destination_root: destination_root))
           end
         end

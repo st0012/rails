@@ -51,9 +51,15 @@ module ActionController
         assert_equal ["omg"], @response.body_parts
       end
 
-      def test_cache_control_is_set
+      def test_cache_control_is_set_by_default
         @response.stream.write "omg"
         assert_equal "no-cache", @response.headers["Cache-Control"]
+      end
+
+      def test_cache_control_is_set_manually
+        @response.set_header("Cache-Control", "public")
+        @response.stream.write "omg"
+        assert_equal "public", @response.headers["Cache-Control"]
       end
 
       def test_content_length_is_removed
@@ -62,7 +68,7 @@ module ActionController
         assert_nil @response.headers["Content-Length"]
       end
 
-      def test_headers_cannot_be_written_after_webserver_reads
+      def test_headers_cannot_be_written_after_web_server_reads
         @response.stream.write "omg"
         latch = Concurrent::CountDownLatch.new
 
@@ -73,7 +79,7 @@ module ActionController
         }
 
         latch.wait
-        assert @response.headers.frozen?
+        assert_predicate @response.headers, :frozen?
         e = assert_raises(ActionDispatch::IllegalStateError) do
           @response.headers["Content-Length"] = "zomg"
         end

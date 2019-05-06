@@ -38,19 +38,19 @@ class EventedFileUpdateCheckerTest < ActiveSupport::TestCase
 
     FileUtils.touch(tmpfiles)
 
-    checker = new_checker(tmpfiles) {}
-    assert !checker.updated?
+    checker = new_checker(tmpfiles) { }
+    assert_not_predicate checker, :updated?
 
     # Pipes used for flow control across fork.
     boot_reader,  boot_writer  = IO.pipe
     touch_reader, touch_writer = IO.pipe
 
     pid = fork do
-      assert checker.updated?
+      assert_predicate checker, :updated?
 
       # Clear previous check value.
       checker.execute
-      assert !checker.updated?
+      assert_not_predicate checker, :updated?
 
       # Fork is booted, ready for file to be touched
       # notify parent process.
@@ -60,7 +60,7 @@ class EventedFileUpdateCheckerTest < ActiveSupport::TestCase
       # has been touched.
       IO.select([touch_reader])
 
-      assert checker.updated?
+      assert_predicate checker, :updated?
     end
 
     assert pid
@@ -72,9 +72,37 @@ class EventedFileUpdateCheckerTest < ActiveSupport::TestCase
     # Notify fork that files have been touched.
     touch_writer.write("touched")
 
-    assert checker.updated?
+    assert_predicate checker, :updated?
 
     Process.wait(pid)
+  end
+
+  test "updated should become true when nonexistent directory is added later" do
+    Dir.mktmpdir do |dir|
+      watched_dir = File.join(dir, "app")
+      unwatched_dir = File.join(dir, "node_modules")
+      not_exist_watched_dir = File.join(dir, "test")
+
+      Dir.mkdir(watched_dir)
+      Dir.mkdir(unwatched_dir)
+
+      checker = new_checker([], watched_dir => ".rb", not_exist_watched_dir => ".rb") { }
+
+      FileUtils.touch(File.join(watched_dir, "a.rb"))
+      wait
+      assert_predicate checker, :updated?
+      assert checker.execute_if_updated
+
+      Dir.mkdir(not_exist_watched_dir)
+      wait
+      assert_predicate checker, :updated?
+      assert checker.execute_if_updated
+
+      FileUtils.touch(File.join(unwatched_dir, "a.rb"))
+      wait
+      assert_not_predicate checker, :updated?
+      assert_not checker.execute_if_updated
+    end
   end
 end
 

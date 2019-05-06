@@ -11,19 +11,6 @@ module ActiveRecord
       def quote(value)
         value = id_value_for_database(value) if value.is_a?(Base)
 
-        if value.respond_to?(:quoted_id)
-          at = value.method(:quoted_id).source_location
-          at &&= " at %s:%d" % at
-
-          owner = value.method(:quoted_id).owner.to_s
-          klass = value.class.to_s
-          klass += "(#{owner})" unless owner == klass
-
-          ActiveSupport::Deprecation.warn \
-            "Defining #quoted_id is deprecated and will be ignored in Rails 5.2. (defined on #{klass}#{at})"
-          return value.quoted_id
-        end
-
         if value.respond_to?(:value_for_database)
           value = value.value_for_database
         end
@@ -36,10 +23,6 @@ module ActiveRecord
       # to a String.
       def type_cast(value, column = nil)
         value = id_value_for_database(value) if value.is_a?(Base)
-
-        if value.respond_to?(:quoted_id) && value.respond_to?(:id)
-          return value.id
-        end
 
         if column
           value = type_cast_from_column(column, value)
@@ -77,7 +60,7 @@ module ActiveRecord
       # Quotes a string, escaping any ' (single quote) and \ (backslash)
       # characters.
       def quote_string(s)
-        s.gsub('\\'.freeze, '\&\&'.freeze).gsub("'".freeze, "''".freeze) # ' (for ruby-mode)
+        s.gsub('\\', '\&\&').gsub("'", "''") # ' (for ruby-mode)
       end
 
       # Quotes the column name. Defaults to no quoting.
@@ -112,7 +95,7 @@ module ActiveRecord
       end
 
       def quoted_true
-        "TRUE".freeze
+        "TRUE"
       end
 
       def unquoted_true
@@ -120,7 +103,7 @@ module ActiveRecord
       end
 
       def quoted_false
-        "FALSE".freeze
+        "FALSE"
       end
 
       def unquoted_false
@@ -147,22 +130,27 @@ module ActiveRecord
       end
 
       def quoted_time(value) # :nodoc:
-        quoted_date(value).sub(/\A2000-01-01 /, "")
+        value = value.change(year: 2000, month: 1, day: 1)
+        quoted_date(value).sub(/\A\d\d\d\d-\d\d-\d\d /, "")
       end
 
       def quoted_binary(value) # :nodoc:
         "'#{quote_string(value.to_s)}'"
       end
 
-      def type_casted_binds(binds) # :nodoc:
-        if binds.first.is_a?(Array)
-          binds.map { |column, value| type_cast(value, column) }
-        else
-          binds.map { |attr| type_cast(attr.value_for_database) }
-        end
+      def sanitize_as_sql_comment(value) # :nodoc:
+        value.to_s.gsub(%r{ (/ (?: | \g<1>) \*) \+? \s* | \s* (\* (?: | \g<2>) /) }x, "")
       end
 
       private
+        def type_casted_binds(binds)
+          if binds.first.is_a?(Array)
+            binds.map { |column, value| type_cast(value, column) }
+          else
+            binds.map { |attr| type_cast(attr.value_for_database) }
+          end
+        end
+
         def lookup_cast_type(sql_type)
           type_map.lookup(sql_type)
         end
@@ -173,13 +161,9 @@ module ActiveRecord
           end
         end
 
-        def types_which_need_no_typecasting
-          [nil, Numeric, String]
-        end
-
         def _quote(value)
           case value
-          when String, ActiveSupport::Multibyte::Chars
+          when String, Symbol, ActiveSupport::Multibyte::Chars
             "'#{quote_string(value.to_s)}'"
           when true       then quoted_true
           when false      then quoted_false
@@ -190,7 +174,6 @@ module ActiveRecord
           when Type::Binary::Data then quoted_binary(value)
           when Type::Time::Value then "'#{quoted_time(value)}'"
           when Date, Time then "'#{quoted_date(value)}'"
-          when Symbol     then "'#{quote_string(value.to_s)}'"
           when Class      then "'#{value}'"
           else raise TypeError, "can't quote #{value.class.name}"
           end
@@ -204,10 +187,9 @@ module ActiveRecord
           when false      then unquoted_false
           # BigDecimals need to be put in a non-normalized form and quoted.
           when BigDecimal then value.to_s("F")
+          when nil, Numeric, String then value
           when Type::Time::Value then quoted_time(value)
           when Date, Time then quoted_date(value)
-          when *types_which_need_no_typecasting
-            value
           else raise TypeError
           end
         end

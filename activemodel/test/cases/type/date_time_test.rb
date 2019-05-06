@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "cases/helper"
-require "active_model/type"
 
 module ActiveModel
   module Type
@@ -24,6 +23,17 @@ module ActiveModel
             assert_equal ::Time.utc(2013, 9, 4, 0, 0, 0), type.cast("Wed, 04 Sep 2013 03:00:00 EAT")
           end
         end
+      end
+
+      def test_hash_to_time
+        type = Type::DateTime.new
+        assert_equal ::Time.utc(2018, 10, 15, 0, 0, 0), type.cast(1 => 2018, 2 => 10, 3 => 15)
+      end
+
+      def test_hash_with_wrong_keys
+        type = Type::DateTime.new
+        error = assert_raises(ArgumentError) { type.cast(a: 1) }
+        assert_equal "Provided hash {:a=>1} doesn't contain necessary keys: [1, 2, 3]", error.message
       end
 
       private

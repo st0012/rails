@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "rdoc/task"
-require_relative "generator"
+require "rails/api/generator"
 
 module Rails
   module API
@@ -69,7 +69,24 @@ module Rails
         "activestorage" => {
           include: %w(
             README.md
+            app/**/active_storage/**/*.rb
             lib/active_storage/**/*.rb
+          )
+        },
+
+        "actionmailbox" => {
+          include: %w(
+            README.md
+            app/**/action_mailbox/**/*.rb
+            lib/action_mailbox/**/*.rb
+          )
+        },
+
+        "actiontext" => {
+          include: %w(
+            README.md
+            app/**/action_text/**/*.rb
+            lib/action_text/**/*.rb
           )
         },
 

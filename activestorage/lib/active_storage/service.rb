@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 require "active_storage/log_subscriber"
+require "action_dispatch"
+require "action_dispatch/http/content_disposition"
 
 module ActiveStorage
-  class IntegrityError < StandardError; end
   # Abstract class serving as an interface for concrete services.
   #
   # The available services are:
@@ -40,8 +41,6 @@ module ActiveStorage
     extend ActiveSupport::Autoload
     autoload :Configurator
 
-    class_attribute :logger
-
     class << self
       # Configure an Active Storage service by name from a set of configurations,
       # typically loaded from a YAML file. The Active Storage engine uses this
@@ -63,8 +62,14 @@ module ActiveStorage
 
     # Upload the +io+ to the +key+ specified. If a +checksum+ is provided, the service will
     # ensure a match when the upload has completed or raise an ActiveStorage::IntegrityError.
-    def upload(key, io, checksum: nil)
+    def upload(key, io, checksum: nil, **options)
       raise NotImplementedError
+    end
+
+    # Update metadata for the file identified by +key+ in the service.
+    # Override in subclasses only if the service needs to store specific
+    # metadata that has to be updated upon identification.
+    def update_metadata(key, **metadata)
     end
 
     # Return the content of the file at the +key+.
@@ -72,18 +77,32 @@ module ActiveStorage
       raise NotImplementedError
     end
 
+    # Return the partial content in the byte +range+ of the file at the +key+.
+    def download_chunk(key, range)
+      raise NotImplementedError
+    end
+
+    def open(*args, &block)
+      ActiveStorage::Downloader.new(self).open(*args, &block)
+    end
+
     # Delete the file at the +key+.
     def delete(key)
       raise NotImplementedError
     end
 
-    # Return true if a file exists at the +key+.
+    # Delete files at keys starting with the +prefix+.
+    def delete_prefixed(prefix)
+      raise NotImplementedError
+    end
+
+    # Return +true+ if a file exists at the +key+.
     def exist?(key)
       raise NotImplementedError
     end
 
     # Returns a signed, temporary URL for the file at the +key+. The URL will be valid for the amount
-    # of seconds specified in +expires_in+. You most also provide the +disposition+ (+:inline+ or +:attachment+),
+    # of seconds specified in +expires_in+. You must also provide the +disposition+ (+:inline+ or +:attachment+),
     # +filename+, and +content_type+ that you wish the file to be served with on request.
     def url(key, expires_in:, disposition:, filename:, content_type:)
       raise NotImplementedError
@@ -91,7 +110,7 @@ module ActiveStorage
 
     # Returns a signed, temporary URL that a direct upload file can be PUT to on the +key+.
     # The URL will be valid for the amount of seconds specified in +expires_in+.
-    # You most also provide the +content_type+, +content_length+, and +checksum+ of the file
+    # You must also provide the +content_type+, +content_length+, and +checksum+ of the file
     # that will be uploaded. All these attributes will be validated by the service upon upload.
     def url_for_direct_upload(key, expires_in:, content_type:, content_length:, checksum:)
       raise NotImplementedError
@@ -103,15 +122,20 @@ module ActiveStorage
     end
 
     private
-      def instrument(operation, key, payload = {}, &block)
+      def instrument(operation, payload = {}, &block)
         ActiveSupport::Notifications.instrument(
           "service_#{operation}.active_storage",
-          payload.merge(key: key, service: service_name), &block)
+          payload.merge(service: service_name), &block)
       end
 
       def service_name
         # ActiveStorage::Service::DiskService => Disk
         self.class.name.split("::").third.remove("Service")
+      end
+
+      def content_disposition_with(type: "inline", filename:)
+        disposition = (type.to_s.presence_in(%w( attachment inline )) || "inline")
+        ActionDispatch::Http::ContentDisposition.format(disposition: disposition, filename: filename.sanitized)
       end
   end
 end

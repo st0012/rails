@@ -52,7 +52,13 @@ module ActiveRecord
       clear_timestamp_attributes
     end
 
-    class_methods do
+    module ClassMethods # :nodoc:
+      def touch_attributes_with_time(*names, time: nil)
+        attribute_names = timestamp_attributes_for_update_in_model
+        attribute_names |= names.map(&:to_s)
+        attribute_names.index_with(time || current_time_from_proper_timezone)
+      end
+
       private
         def timestamp_attributes_for_create_in_model
           timestamp_attributes_for_create.select { |c| column_names.include?(c) }
@@ -95,8 +101,8 @@ module ActiveRecord
       super
     end
 
-    def _update_record(*args, touch: true, **options)
-      if touch && should_record_timestamps?
+    def _update_record
+      if @_touch_record && should_record_timestamps?
         current_time = current_time_from_proper_timezone
 
         timestamp_attributes_for_update_in_model.each do |column|
@@ -104,7 +110,13 @@ module ActiveRecord
           _write_attribute(column, current_time)
         end
       end
-      super(*args)
+
+      super
+    end
+
+    def create_or_update(touch: true, **)
+      @_touch_record = touch
+      super
     end
 
     def should_record_timestamps?
@@ -127,11 +139,10 @@ module ActiveRecord
       self.class.send(:current_time_from_proper_timezone)
     end
 
-    def max_updated_column_timestamp(timestamp_names = timestamp_attributes_for_update_in_model)
-      timestamp_names
-        .map { |attr| self[attr] }
+    def max_updated_column_timestamp
+      timestamp_attributes_for_update_in_model
+        .map { |attr| self[attr]&.to_time }
         .compact
-        .map(&:to_time)
         .max
     end
 

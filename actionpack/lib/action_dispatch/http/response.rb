@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/module/attribute_accessors"
-require_relative "filter_redirect"
-require_relative "cache"
+require "action_dispatch/http/filter_redirect"
+require "action_dispatch/http/cache"
 require "monitor"
 
 module ActionDispatch # :nodoc:
@@ -78,10 +78,11 @@ module ActionDispatch # :nodoc:
       x
     end
 
-    CONTENT_TYPE = "Content-Type".freeze
-    SET_COOKIE   = "Set-Cookie".freeze
-    LOCATION     = "Location".freeze
+    CONTENT_TYPE = "Content-Type"
+    SET_COOKIE   = "Set-Cookie"
+    LOCATION     = "Location"
     NO_CONTENT_CODES = [100, 101, 102, 204, 205, 304]
+    CONTENT_TYPE_PARSER = /\A(?<type>[^;\s]+)?(?:.*;\s*charset=(?<quote>"?)(?<charset>[^;\s]+)\k<quote>)?/ # :nodoc:
 
     cattr_accessor :default_charset, default: "utf-8"
     cattr_accessor :default_headers
@@ -105,7 +106,7 @@ module ActionDispatch # :nodoc:
 
       def body
         @str_body ||= begin
-          buf = "".dup
+          buf = +""
           each { |chunk| buf << chunk }
           buf
         end
@@ -224,7 +225,14 @@ module ActionDispatch # :nodoc:
       @status = Rack::Utils.status_code(status)
     end
 
-    # Sets the HTTP content type.
+    # Sets the HTTP response's content MIME type. For example, in the controller
+    # you could write this:
+    #
+    #  response.content_type = "text/plain"
+    #
+    # If a character set has been defined for this response (see charset=) then
+    # the character set information will also be included in the content type
+    # information.
     def content_type=(content_type)
       return unless content_type
       new_header_info = parse_content_type(content_type.to_s)
@@ -234,15 +242,8 @@ module ActionDispatch # :nodoc:
       set_content_type new_header_info.mime_type, charset
     end
 
-    # Sets the HTTP response's content MIME type. For example, in the controller
-    # you could write this:
-    #
-    #  response.content_type = "text/plain"
-    #
-    # If a character set has been defined for this response (see charset=) then
-    # the character set information will also be included in the content type
-    # information.
-
+    # Content type of response.
+    # It returns just MIME type and does NOT contain charset part.
     def content_type
       parsed_content_type_header.mime_type
     end
@@ -409,10 +410,8 @@ module ActionDispatch # :nodoc:
     NullContentTypeHeader = ContentTypeHeader.new nil, nil
 
     def parse_content_type(content_type)
-      if content_type
-        type, charset = content_type.split(/;\s*charset=/)
-        type = nil if type && type.empty?
-        ContentTypeHeader.new(type, charset)
+      if content_type && match = CONTENT_TYPE_PARSER.match(content_type)
+        ContentTypeHeader.new(match[:type], match[:charset])
       else
         NullContentTypeHeader
       end
@@ -433,6 +432,7 @@ module ActionDispatch # :nodoc:
     def before_committed
       return if committed?
       assign_default_content_type_and_charset!
+      merge_and_normalize_cache_control!(@cache_control)
       handle_conditional_get!
       handle_no_content!
     end

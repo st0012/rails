@@ -248,12 +248,12 @@ module ActiveRecord
 
       def test_index_with_opclass
         with_example_table do
-          @connection.add_index "ex", "data varchar_pattern_ops"
-          index = @connection.indexes("ex").find { |idx| idx.name == "index_ex_on_data_varchar_pattern_ops" }
-          assert_equal "data varchar_pattern_ops", index.columns
+          @connection.add_index "ex", "data", opclass: "varchar_pattern_ops"
+          index = @connection.indexes("ex").find { |idx| idx.name == "index_ex_on_data" }
+          assert_equal ["data"], index.columns
 
-          @connection.remove_index "ex", "data varchar_pattern_ops"
-          assert_not @connection.indexes("ex").find { |idx| idx.name == "index_ex_on_data_varchar_pattern_ops" }
+          @connection.remove_index "ex", "data"
+          assert_not @connection.indexes("ex").find { |idx| idx.name == "index_ex_on_data" }
         end
       end
 
@@ -263,25 +263,25 @@ module ActiveRecord
       end
 
       def test_columns_for_distinct_one_order
-        assert_equal "posts.id, posts.created_at AS alias_0",
+        assert_equal "posts.created_at AS alias_0, posts.id",
           @connection.columns_for_distinct("posts.id", ["posts.created_at desc"])
       end
 
       def test_columns_for_distinct_few_orders
-        assert_equal "posts.id, posts.created_at AS alias_0, posts.position AS alias_1",
+        assert_equal "posts.created_at AS alias_0, posts.position AS alias_1, posts.id",
           @connection.columns_for_distinct("posts.id", ["posts.created_at desc", "posts.position asc"])
       end
 
       def test_columns_for_distinct_with_case
         assert_equal(
-          "posts.id, CASE WHEN author.is_active THEN UPPER(author.name) ELSE UPPER(author.email) END AS alias_0",
+          "CASE WHEN author.is_active THEN UPPER(author.name) ELSE UPPER(author.email) END AS alias_0, posts.id",
           @connection.columns_for_distinct("posts.id",
             ["CASE WHEN author.is_active THEN UPPER(author.name) ELSE UPPER(author.email) END"])
         )
       end
 
       def test_columns_for_distinct_blank_not_nil_orders
-        assert_equal "posts.id, posts.created_at AS alias_0",
+        assert_equal "posts.created_at AS alias_0, posts.id",
           @connection.columns_for_distinct("posts.id", ["posts.created_at desc", "", "   "])
       end
 
@@ -290,23 +290,23 @@ module ActiveRecord
         def order.to_sql
           "posts.created_at desc"
         end
-        assert_equal "posts.id, posts.created_at AS alias_0",
+        assert_equal "posts.created_at AS alias_0, posts.id",
           @connection.columns_for_distinct("posts.id", [order])
       end
 
       def test_columns_for_distinct_with_nulls
-        assert_equal "posts.title, posts.updater_id AS alias_0", @connection.columns_for_distinct("posts.title", ["posts.updater_id desc nulls first"])
-        assert_equal "posts.title, posts.updater_id AS alias_0", @connection.columns_for_distinct("posts.title", ["posts.updater_id desc nulls last"])
+        assert_equal "posts.updater_id AS alias_0, posts.title", @connection.columns_for_distinct("posts.title", ["posts.updater_id desc nulls first"])
+        assert_equal "posts.updater_id AS alias_0, posts.title", @connection.columns_for_distinct("posts.title", ["posts.updater_id desc nulls last"])
       end
 
       def test_columns_for_distinct_without_order_specifiers
-        assert_equal "posts.title, posts.updater_id AS alias_0",
+        assert_equal "posts.updater_id AS alias_0, posts.title",
           @connection.columns_for_distinct("posts.title", ["posts.updater_id"])
 
-        assert_equal "posts.title, posts.updater_id AS alias_0",
+        assert_equal "posts.updater_id AS alias_0, posts.title",
           @connection.columns_for_distinct("posts.title", ["posts.updater_id nulls last"])
 
-        assert_equal "posts.title, posts.updater_id AS alias_0",
+        assert_equal "posts.updater_id AS alias_0, posts.title",
           @connection.columns_for_distinct("posts.title", ["posts.updater_id nulls first"])
       end
 
@@ -373,6 +373,72 @@ module ActiveRecord
 
           first_number.save!
           assert_equal 4, first_number.reload.number
+        end
+      end
+
+      def test_errors_when_an_insert_query_is_called_while_preventing_writes
+        with_example_table do
+          assert_raises(ActiveRecord::ReadOnlyError) do
+            @connection.while_preventing_writes do
+              @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
+            end
+          end
+        end
+      end
+
+      def test_errors_when_an_update_query_is_called_while_preventing_writes
+        with_example_table do
+          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
+
+          assert_raises(ActiveRecord::ReadOnlyError) do
+            @connection.while_preventing_writes do
+              @connection.execute("UPDATE ex SET data = '9989' WHERE data = '138853948594'")
+            end
+          end
+        end
+      end
+
+      def test_errors_when_a_delete_query_is_called_while_preventing_writes
+        with_example_table do
+          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
+
+          assert_raises(ActiveRecord::ReadOnlyError) do
+            @connection.while_preventing_writes do
+              @connection.execute("DELETE FROM ex where data = '138853948594'")
+            end
+          end
+        end
+      end
+
+      def test_doesnt_error_when_a_select_query_is_called_while_preventing_writes
+        with_example_table do
+          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
+
+          @connection.while_preventing_writes do
+            assert_equal 1, @connection.execute("SELECT * FROM ex WHERE data = '138853948594'").entries.count
+          end
+        end
+      end
+
+      def test_doesnt_error_when_a_show_query_is_called_while_preventing_writes
+        @connection.while_preventing_writes do
+          assert_equal 1, @connection.execute("SHOW TIME ZONE").entries.count
+        end
+      end
+
+      def test_doesnt_error_when_a_set_query_is_called_while_preventing_writes
+        @connection.while_preventing_writes do
+          assert_equal [], @connection.execute("SET standard_conforming_strings = on").entries
+        end
+      end
+
+      def test_doesnt_error_when_a_read_query_with_leading_chars_is_called_while_preventing_writes
+        with_example_table do
+          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
+
+          @connection.while_preventing_writes do
+            assert_equal 1, @connection.execute("(\n( SELECT * FROM ex WHERE data = '138853948594' ) )").entries.count
+          end
         end
       end
 

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require_relative "../../test_unit"
-require_relative "../../resource_helpers"
+require "rails/generators/test_unit"
+require "rails/generators/resource_helpers"
 
 module TestUnit # :nodoc:
   module Generators # :nodoc:
@@ -23,7 +23,7 @@ module TestUnit # :nodoc:
         template template_file,
                  File.join("test/controllers", controller_class_path, "#{controller_file_name}_controller_test.rb")
 
-        unless options.api? || options[:system_tests].nil?
+        if !options.api? && options[:system_tests]
           template "system_test.rb", File.join("test/system", class_path, "#{file_name.pluralize}_test.rb")
         end
       end
@@ -49,10 +49,20 @@ module TestUnit # :nodoc:
           attributes_names.map do |name|
             if %w(password password_confirmation).include?(name) && attributes.any?(&:password_digest?)
               ["#{name}", "'secret'"]
-            else
+            elsif !virtual?(name)
               ["#{name}", "@#{singular_table_name}.#{name}"]
             end
-          end.sort.to_h
+          end.compact.sort.to_h
+        end
+
+        def boolean?(name)
+          attribute = attributes.find { |attr| attr.name == name }
+          attribute&.type == :boolean
+        end
+
+        def virtual?(name)
+          attribute = attributes.find { |attr| attr.name == name }
+          attribute&.virtual?
         end
     end
   end

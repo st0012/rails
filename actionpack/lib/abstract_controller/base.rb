@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "error"
+require "abstract_controller/error"
 require "active_support/configurable"
 require "active_support/descendants_tracker"
 require "active_support/core_ext/module/anonymous"
@@ -78,7 +78,9 @@ module AbstractController
             # Except for public instance methods of Base and its ancestors
             internal_methods +
             # Be sure to include shadowed public instance methods of this class
-            public_instance_methods(false)).uniq.map(&:to_s)
+            public_instance_methods(false))
+
+          methods.map!(&:to_s)
 
           methods.to_set
         end
@@ -102,7 +104,7 @@ module AbstractController
       # ==== Returns
       # * <tt>String</tt>
       def controller_path
-        @controller_path ||= name.sub(/Controller$/, "".freeze).underscore unless anonymous?
+        @controller_path ||= name.sub(/Controller$/, "").underscore unless anonymous?
       end
 
       # Refresh the cached action_methods when a new action_method is added.
@@ -180,8 +182,6 @@ module AbstractController
       #
       # ==== Parameters
       # * <tt>name</tt> - The name of an action to be tested
-      #
-      # :api: private
       def action_method?(name)
         self.class.action_methods.include?(name)
       end
